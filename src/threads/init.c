@@ -64,6 +64,7 @@ static char **read_command_line (void);
 static char **parse_options (char **argv);
 static void run_actions (char **argv);
 static void usage (void);
+static void run_kernel_shell(void);
 
 #ifdef FILESYS
 static void locate_block_devices (void);
@@ -134,13 +135,54 @@ pintos_init (void)
     run_actions (argv);
   } else {
     // TODO: no command line passed to kernel. Run interactively 
+    run_kernel_shell();
   }
 
   /* Finish up. */
   shutdown ();
   thread_exit ();
 }
-
+
+/**
+ * kernel shell
+ * 1. print 'PKUOS>' prompt every line
+ * 2. print char c from input right now
+ * 3. if c == enter, then run the command
+ *      command == whoami, print student id
+ *      command == exit,  exit shell and kernel will shutdown
+ *      else, print Invalid command
+ */
+static void run_kernel_shell(void) {
+  char command[64];
+  int i = 0;
+  printf("PKUOS>");
+  memset(command, '\0', 64);
+  while (true) {
+    char c = (char) input_getc();
+    if (c == 0x0d) { // char == enter
+      printf("\n");
+      if (!strcmp(command, "whoami")) {
+        printf("2241403003 xzc\n");
+
+      } else if (!strcmp(command, "exit")) {
+        printf("exit shell\n");
+        break;
+
+      } else {
+        printf("Invalid command\n");
+      }
+      printf("PKUOS>");
+      memset(command, '\0', 64);
+      i = 0;
+
+    } else {
+      command[i] = c;
+      printf("%c", c);
+      i += 1;
+    }
+  }
+}
+
 /** Clear the "BSS", a segment that should be initialized to
    zeros.  It isn't actually stored on disk or zeroed by the
    kernel loader, so we have to zero it ourselves.
@@ -356,7 +398,7 @@ usage (void)
           "Options must precede actions.\n"
           "Actions are executed in the order specified.\n"
           "\nAvailable actions:\n"
-#ifdef USERPROG
+#ifdef USERPROu
           "  run 'PROG [ARG...]' Run PROG and wait for it to complete.\n"
 #else
           "  run TEST           Run TEST.\n"

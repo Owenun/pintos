@@ -24,3 +24,5 @@ qemu-nox: build/qemu-nox
 
 clean:
 	rm -rf build
+bear:
+	make clean && bear make 
