@@ -16,6 +16,9 @@ void sema_down (struct semaphore *);
 bool sema_try_down (struct semaphore *);
 void sema_up (struct semaphore *);
 void sema_self_test (void);
+/** define P and V replaced sema_down and sema_up */
+#define P(sem) sema_down(sem);
+#define V(sem) sema_up(sem);
 
 /** Lock. */
 struct lock 

@@ -7,6 +7,7 @@
 #include "threads/interrupt.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
+#include "threads/malloc.h"
   
 /** See [8254] for hardware details of the 8254 timer chip. */
 
@@ -62,7 +63,6 @@ timer_calibrate (void)
   for (test_bit = high_bit >> 1; test_bit != high_bit >> 10; test_bit >>= 1)
     if (!too_many_loops (high_bit | test_bit))
       loops_per_tick |= test_bit;
-
   printf ("%'"PRIu64" loops/s.\n", (uint64_t) loops_per_tick * TIMER_FREQ);
 }
 
@@ -89,11 +89,17 @@ timer_elapsed (int64_t then)
 void
 timer_sleep (int64_t ticks) 
 {
-  int64_t start = timer_ticks ();
+  if (ticks <= 0) return ;
 
   ASSERT (intr_get_level () == INTR_ON);
-  while (timer_elapsed (start) < ticks) 
-    thread_yield ();
+  enum intr_level old_level = intr_disable();
+  struct thread *t = thread_current();
+  t->tick = ticks;
+  thread_block();
+  intr_set_level(old_level);
+
+  // while (timer_elapsed (start) < ticks) 
+    // thread_yield ();
 }
 
 /** Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -166,11 +172,21 @@ timer_print_stats (void)
   printf ("Timer: %"PRId64" ticks\n", timer_ticks ());
 }
 
+
+// wake thread blokced by tick_sleep if possible
+static void sleep_tick(struct thread* t, void *aux UNUSED) {
+  if (t->tick <= 0) return;
+  t->tick--;
+  if (t->tick == 0) 
+    thread_unblock(t);
+}
+
 /** Timer interrupt handler. */
 static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
+  thread_foreach(sleep_tick, (void*) 0);
   thread_tick ();
 }
 
