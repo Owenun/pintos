@@ -203,6 +203,10 @@ thread_create (const char *name, int priority,
 
   /* Add to run queue. */
   thread_unblock (t);
+  
+  /* every time create a new thread, yield to check if high 
+  priority thread is created */
+  thread_yield();
 
   return tid;
 }
@@ -243,6 +247,13 @@ thread_unblock (struct thread *t)
   list_push_back (&ready_list, &t->elem);
   t->status = THREAD_READY;
   intr_set_level (old_level);
+}
+
+
+bool thread_less(struct list_elem* a, struct list_elem* b, void* arg) {
+  struct thread* t1 = list_entry(a, struct thread, elem);
+  struct thread* t2 = list_entry(b, struct thread, elem);
+  return t1->priority < t2->priority;
 }
 
 /** Returns the name of the running thread. */
@@ -316,7 +327,6 @@ thread_yield (void)
   schedule ();
   intr_set_level (old_level);
 }
-
 /** Invoke function 'func' on all threads, passing along 'aux'.
    This function must be called with interrupts off. */
 void
@@ -339,6 +349,12 @@ void
 thread_set_priority (int new_priority) 
 {
   thread_current ()->priority = new_priority;
+  if (list_empty(&ready_list)) return;
+  struct list_elem* priority_max_thread = list_max(&ready_list, thread_less, NULL);
+  struct thread* t = list_entry(priority_max_thread, struct thread, elem);
+  
+  if (t->priority > new_priority) 
+    thread_yield();
 }
 
 /** Returns the current thread's priority. */
@@ -495,8 +511,11 @@ next_thread_to_run (void)
 {
   if (list_empty (&ready_list))
     return idle_thread;
-  else
-    return list_entry (list_pop_front (&ready_list), struct thread, elem);
+  else {
+    struct list_elem* priority_max_thread = list_max(&ready_list, thread_less, NULL);
+    list_remove(priority_max_thread);
+    return list_entry(priority_max_thread, struct thread, elem);
+  }
 }
 
 /** Completes a thread switch by activating the new thread's page

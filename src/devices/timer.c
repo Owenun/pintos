@@ -98,8 +98,6 @@ timer_sleep (int64_t ticks)
   thread_block();
   intr_set_level(old_level);
 
-  // while (timer_elapsed (start) < ticks) 
-    // thread_yield ();
 }
 
 /** Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -174,11 +172,15 @@ timer_print_stats (void)
 
 
 // wake thread blokced by tick_sleep if possible
-static void sleep_tick(struct thread* t, void *aux UNUSED) {
+static void sleep_tick(struct thread* t, void *is_unblock) {
   if (t->tick <= 0) return;
   t->tick--;
   if (t->tick == 0) 
-    thread_unblock(t);
+    {
+      thread_unblock(t); 
+      *(bool*)is_unblock = true;
+    }
+
 }
 
 /** Timer interrupt handler. */
@@ -186,8 +188,11 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
-  thread_foreach(sleep_tick, (void*) 0);
+  bool is_unblock;
+  thread_foreach(sleep_tick, &is_unblock);
   thread_tick ();
+  /* if any thread unblocked, yield to check if higer priority appear*/
+  if (is_unblock) intr_yield_on_return();
 }
 
 /** Returns true if LOOPS iterations waits for more than one timer

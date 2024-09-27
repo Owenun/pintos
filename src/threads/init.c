@@ -139,6 +139,7 @@ pintos_init (void)
   }
 
   /* Finish up. */
+  printf("begin shutdown\n");
   shutdown ();
   thread_exit ();
 }
