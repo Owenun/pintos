@@ -249,8 +249,9 @@ thread_unblock (struct thread *t)
   intr_set_level (old_level);
 }
 
+static bool thread_less(struct list_elem* a, struct list_elem* b, void* arg UNUSED);
 
-bool thread_less(struct list_elem* a, struct list_elem* b, void* arg) {
+static bool thread_less(struct list_elem* a, struct list_elem* b, void* arg UNUSED) {
   struct thread* t1 = list_entry(a, struct thread, elem);
   struct thread* t2 = list_entry(b, struct thread, elem);
   return t1->priority < t2->priority;
@@ -507,7 +508,7 @@ alloc_frame (struct thread *t, size_t size)
    will be in the run queue.)  If the run queue is empty, return
    idle_thread. */
 static struct thread *
-next_thread_to_run (void) 
+priority_next_thread_to_run (void) 
 {
   if (list_empty (&ready_list))
     return idle_thread;
@@ -517,6 +518,23 @@ next_thread_to_run (void)
     return list_entry(priority_max_thread, struct thread, elem);
   }
 }
+
+static struct thread* 
+round_robin_next_thread_to_run (void){
+  if (list_empty(&ready_list))
+    return idle_thread;
+  else return list_entry(list_pop_front(&ready_list), struct thread, elem);
+}
+
+
+
+static struct thread * 
+advanced_next_thread_to_run(void)
+{
+  return NULL;
+
+}
+
 
 /** Completes a thread switch by activating the new thread's page
    tables, and, if the previous thread is dying, destroying it.
@@ -571,11 +589,22 @@ thread_schedule_tail (struct thread *prev)
 
    It's not safe to call printf() until thread_schedule_tail()
    has completed. */
+
+bool thread_priority = true;
 static void
 schedule (void) 
 {
   struct thread *cur = running_thread ();
-  struct thread *next = next_thread_to_run ();
+
+  struct thread *next;
+  if (thread_mlfqs) {
+    next = advanced_next_thread_to_run();
+  } else if (thread_priority){
+    next = priority_next_thread_to_run();
+  } else {
+    next = round_robin_next_thread_to_run();
+  }
+
   struct thread *prev = NULL;
 
   ASSERT (intr_get_level () == INTR_OFF);
