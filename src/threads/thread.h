@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "fixed_point.h"
 
 /** States in a thread's life cycle. */
 enum thread_status
@@ -23,6 +24,10 @@ typedef int tid_t;
 #define PRI_MIN 0                       /**< Lowest priority. */
 #define PRI_DEFAULT 31                  /**< Default priority. */
 #define PRI_MAX 63                      /**< Highest priority. */
+
+#define NICE_MAX      20
+#define NICE_MIN     -20
+#define NICE_DEFAULT  0
 
 /** A kernel thread or user process.
 
@@ -99,6 +104,11 @@ struct thread
 #endif
    /* tick for timer_sleep*/
    uint64_t tick;
+
+   /* nice and recent cpu*/
+   int nice;
+   fixedpt recent_cpu;
+
     /* Owned by thread.c. */
     unsigned magic;                     /**< Detects stack overflow. */
   };

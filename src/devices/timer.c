@@ -19,7 +19,8 @@
 #endif
 
 /** Number of timer ticks since OS booted. */
-static int64_t ticks;
+// static int64_t ticks;
+int64_t ticks;
 
 /** Number of loops per timer tick.
    Initialized by timer_calibrate(). */
@@ -190,9 +191,12 @@ timer_interrupt (struct intr_frame *args UNUSED)
   ticks++;
   bool is_unblock;
   thread_foreach(sleep_tick, &is_unblock);
+
+  /** recalculate priority per time slice */
   thread_tick ();
+
   /* if any thread unblocked, yield to check if higer priority appear*/
-  if (is_unblock) intr_yield_on_return();
+  if (is_unblock && !thread_mlfqs) intr_yield_on_return();
 }
 
 /** Returns true if LOOPS iterations waits for more than one timer
