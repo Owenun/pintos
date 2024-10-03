@@ -5,6 +5,7 @@
 #include <list.h>
 #include <stdint.h>
 #include "fixed_point.h"
+#include "synch.h"
 
 /** States in a thread's life cycle. */
 enum thread_status
@@ -101,6 +102,7 @@ struct thread
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /**< Page directory. */
+    int ppid;
 #endif
    /* tick for timer_sleep*/
    uint64_t tick;
@@ -113,11 +115,23 @@ struct thread
     unsigned magic;                     /**< Detects stack overflow. */
   };
 
+struct tinfo {
+  tid_t tid;
+  tid_t ppid;
+  int ex_code;
+  struct thread *t;
+  struct semaphore sema_exec;
+  struct semaphore sema_exit;
+  bool wait;
+  bool load;
+};
+
 /** If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
 extern bool thread_mlfqs;
-
+extern bool thread_prior;
+extern struct tinfo tinfos[128];
 void thread_init (void);
 void thread_start (void);
 

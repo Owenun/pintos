@@ -134,10 +134,9 @@ pintos_init (void)
     /* Run actions specified on kernel command line. */
     run_actions (argv);
   } else {
-    // TODO: no command line passed to kernel. Run interactively 
+
     run_kernel_shell();
   }
-
   /* Finish up. */
   printf("begin shutdown\n");
   shutdown ();
@@ -336,6 +335,7 @@ run_task (char **argv)
 #else
   run_test (task);
 #endif
+  // timer_sleep(TIMER_FREQ);
   printf ("Execution of '%s' complete.\n", task);
 }
 

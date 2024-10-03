@@ -105,6 +105,7 @@ sema_try_down (struct semaphore *sema)
    and wakes up one thread of those waiting for SEMA, if any.
 
    This function may be called from an interrupt handler. */
+
 void
 sema_up (struct semaphore *sema) 
 {
@@ -120,9 +121,17 @@ sema_up (struct semaphore *sema)
                                 struct thread, elem));
   sema->value++;
   intr_set_level (old_level);
-  /*yield to check if higher priority thread happened */
-  if (has_waiter)
-    thread_yield();
+
+  /**Yield to check if higher priority thread happened 
+   * Only work when thread_prior enabled
+   * different yield method for intr_context and no intr_context 
+  */
+  if (thread_prior && has_waiter) {
+    if (intr_context() ) 
+      intr_yield_on_return();
+    else 
+      thread_yield();
+  }
 }
 
 static void sema_test_helper (void *sema_);

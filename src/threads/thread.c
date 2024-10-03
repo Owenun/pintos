@@ -72,7 +72,7 @@ bool thread_mlfqs;
 /** If true, use priority scheduler
  *  the prior of scheduler if mlfqs > priority > round-robin
  */
-bool thread_prior ;
+bool thread_prior = false;
 
 static void kernel_thread (thread_func *, void *aux);
 
@@ -113,6 +113,7 @@ int  thread_get_priority(void);
 /** for list_max, compare two thread by priority, unused for mlfqs */
 static bool thread_less(const struct list_elem* a, const struct list_elem* b, void* arg UNUSED);
 
+struct tinfo tinfos[128];
 
 /** Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -243,6 +244,20 @@ thread_create (const char *name, int priority,
   /* Initialize thread. */
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
+  t->ppid  = thread_current()->tid;
+
+  /* set ppid and set sema for sync*/
+  #ifdef USERPROG
+  enum intr_level old_level = intr_disable();
+  ASSERT(tid < 128 && tid > 0);
+  struct tinfo *ti = &tinfos[tid];
+  ti->t  = t;
+  ti->tid = tid;
+  ti->ppid = t->ppid;
+  sema_init(&ti->sema_exec, 0);
+  sema_init(&ti->sema_exit, 0);
+  intr_set_level(old_level);
+  #endif
 
   /* tick for timer_sleep*/
   t->tick = 0;
@@ -266,6 +281,9 @@ thread_create (const char *name, int priority,
   sf = alloc_frame (t, sizeof *sf);
   sf->eip = switch_entry;
   sf->ebp = 0;
+
+  /**UserProg */
+
 
   /* Add to run queue. */
   thread_unblock (t);
@@ -730,6 +748,7 @@ init_thread (struct thread *t, const char *name, int priority)
     t->nice  = 0;
     t->recent_cpu = 0;
   }
+
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);

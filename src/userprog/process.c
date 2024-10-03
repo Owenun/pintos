@@ -18,8 +18,13 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 
+#include "threads/synch.h"
+
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
+static bool extract_file_name(char* s, char* fname);
+static void* arg_pass(void* arg, void* esp);
+
 
 /** Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -38,11 +43,22 @@ process_execute (const char *file_name)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
 
+  /* extract file name*/
+  /* temp set file name Max  15*/
+  char fname[15 + 1];
+  if (!extract_file_name(fn_copy, fname)) {
+    palloc_free_page(fn_copy);
+    return TID_ERROR;
+  }
+
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create (fname, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
-  return tid;
+
+  ASSERT(tid > 1 && tid < 128);
+  sema_down(&tinfos[tid].sema_exec);
+  return tinfos[tid].load ? tid : -1;
 }
 
 /** A thread function that loads a user process and starts it
@@ -52,19 +68,26 @@ start_process (void *file_name_)
 {
   char *file_name = file_name_;
   struct intr_frame if_;
-  bool success;
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
-  success = load (file_name, &if_.eip, &if_.esp);
 
-  /* If load failed, quit. */
-  palloc_free_page (file_name);
-  if (!success) 
-    thread_exit ();
+
+  struct thread * t = thread_current();
+  char fname[15 + 1];
+  if (!extract_file_name(file_name, fname)) {
+    goto done;
+  }
+  if (!load(fname, &if_.eip, &if_.esp)) {
+    goto done;
+  }
+  if_.esp = arg_pass(file_name, if_.esp);
+
+  tinfos[t->tid].load = true;
+  sema_up(&tinfos[t->tid].sema_exec);
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -72,8 +95,20 @@ start_process (void *file_name_)
      arguments on the stack in the form of a `struct intr_frame',
      we just point the stack pointer (%esp) to our stack frame
      and jump to it. */
-  asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
+  /**modify for vscode render better 
+   * old -->  asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
+   * */ 
+  asm volatile ("movl %0, %%esp" : : "g" (&if_) : "memory");
+  asm volatile ("jmp intr_exit"  : : : "memory");
   NOT_REACHED ();
+
+
+done:
+  tinfos[t->tid].load = false;
+  tinfos[t->tid].ex_code = -1;
+  sema_up(&tinfos[t->tid].sema_exec);
+  palloc_free_page (file_name);
+  thread_exit ();
 }
 
 /** Waits for thread TID to die and returns its exit status.  If
@@ -87,14 +122,44 @@ start_process (void *file_name_)
    does nothing. */
 int
 process_wait (tid_t child_tid UNUSED) 
-{
-  return -1;
+{ 
+  // tid 1 for initial thread, tid 2 for idle thread
+  // temp limit tid < 128
+  if (child_tid < 3 || child_tid >= 128) return -1;
+  // printf("child id %d\n", child_tid);
+  tid_t cpid = tinfos[child_tid].tid;
+  if (cpid != child_tid) return -1; 
+  tid_t ppid = tinfos[child_tid].ppid;
+  // if tid invalid
+  if (cpid == 0) return -1;
+  // printf("cpid %d\n", cpid);
+  // if not child tid
+  if (ppid != thread_current()->tid) return -1;
+  // if has called
+  if (tinfos[cpid].wait) return -1;
+  // printf("get wait %d\n", (int) tinfos[cpid].wait);
+
+  // the fisrt called
+  sema_down( &tinfos[cpid].sema_exit);
+  tinfos[cpid].wait = true;
+  // printf("set t %d wait -> %d\n", cpid, tinfos[cpid].wait );
+  return tinfos[cpid].ex_code;
 }
 
 /** Free the current process's resources. */
 void
 process_exit (void)
 {
+  /* Print format exit code when sys_exit or some other reason
+     But do not print exit code when halt called
+     if exception kill user process, finally this fun would be 
+     called and exit code would be printed. 
+  */
+  printf("%s: exit(%d)\n", thread_current()->name, tinfos[thread_current()->tid].ex_code);
+  
+  /* sema_up exit to let parrent get exit code */
+  sema_up(&tinfos[thread_current()->tid].sema_exit);
+
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
@@ -463,3 +528,67 @@ install_page (void *upage, void *kpage, bool writable)
   return (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
 }
+
+
+
+/** copy file name to fname */
+static bool extract_file_name(char* s, char* fname) {
+  int MAX_FILE_NAME = 15;
+  int i;
+  for (i = 0; i < MAX_FILE_NAME && s[i] != ' ' && s[i] != '\0'; i++) {
+    fname[i] = s[i];
+  }
+  fname[i] = '\0';
+  if (i == MAX_FILE_NAME && s[i] != '\0' && s[i] != ' ') {
+    printf("filename: %s too long\n", fname);
+    return false;
+  }
+  return true;
+}
+
+static void* arg_pass(void* args, void* esp) {
+    char* token, *saved_ptr;
+    int argc = 0;
+    char* argv[30];
+
+    // 解析命令行参数
+    token = (char*)args;
+    for (token = strtok_r(token, " ", &saved_ptr); token != NULL; token = strtok_r(NULL, " ", &saved_ptr)) {
+        argv[argc] = token;
+        argc += 1;
+    }
+
+    // 计算参数字符串的总长度并调整栈顶指针
+    uint8_t* top = (uint8_t*)esp;
+    for (int i = argc - 1; i >= 0; i--) {
+        uint32_t len = strlen(argv[i]) + 1;
+        top -= len;
+        memcpy(top, argv[i], len);
+        argv[i] = (char*)top;
+    }
+
+    // 4字节对齐
+    uint32_t align = (uint32_t)top % 4;
+    if (align != 0) {
+        top -= align;
+        memset(top, 0, align);
+    }
+
+    // 将 argv 和 argc 放入栈中
+    uint32_t* stack_top = (uint32_t*)top;
+    // put null
+    stack_top = stack_top - 1;
+    stack_top[0] = (uint32_t)NULL;
+    // put argv and argc
+    stack_top -= argc;
+    for (int i = 0; i < argc; i++) {
+        stack_top[i] = (uint32_t)argv[i];
+    }
+    stack_top = stack_top - 3;
+    stack_top[2] =(uint32_t)(stack_top + 3);
+    stack_top[1] = argc;
+    stack_top[0] = 0x0;
+
+    return (void*) stack_top;
+}
+
