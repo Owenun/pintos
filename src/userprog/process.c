@@ -19,13 +19,17 @@
 #include "threads/vaddr.h"
 
 #include "threads/synch.h"
+#include "threads/malloc.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 static bool extract_file_name(char* s, char* fname);
 static void* arg_pass(void* arg, void* esp);
+struct lock fslock;
 
-
+void fslock_init() {
+  lock_init(&fslock);
+}
 /** Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -53,10 +57,11 @@ process_execute (const char *file_name)
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (fname, PRI_DEFAULT, start_process, fn_copy);
+  // printf("pid %d\n",tid);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
 
-  ASSERT(tid > 1 && tid < 128);
+  ASSERT(tid > 1 && tid < THREADMAX);
   sema_down(&tinfos[tid].sema_exec);
   return tinfos[tid].load ? tid : -1;
 }
@@ -84,6 +89,13 @@ start_process (void *file_name_)
   if (!load(fname, &if_.eip, &if_.esp)) {
     goto done;
   }
+  /** deny elf file to write, and enable when thread exit */
+  lock_acquire(&fslock);
+  struct file* elffile = filesys_open(fname);
+  thread_current()->elf = elffile;
+  file_deny_write(elffile);
+  lock_release(&fslock);
+
   if_.esp = arg_pass(file_name, if_.esp);
 
   tinfos[t->tid].load = true;
@@ -125,7 +137,7 @@ process_wait (tid_t child_tid UNUSED)
 { 
   // tid 1 for initial thread, tid 2 for idle thread
   // temp limit tid < 128
-  if (child_tid < 3 || child_tid >= 128) return -1;
+  if (child_tid < 3 || child_tid >= THREADMAX) return -1;
   // printf("child id %d\n", child_tid);
   tid_t cpid = tinfos[child_tid].tid;
   if (cpid != child_tid) return -1; 
@@ -156,7 +168,20 @@ process_exit (void)
      called and exit code would be printed. 
   */
   printf("%s: exit(%d)\n", thread_current()->name, tinfos[thread_current()->tid].ex_code);
-  
+
+  /** user prog exit allow_write file again */
+  if (tinfos[thread_current()->tid].load) {
+    
+    lock_acquire(&fslock);
+    for (int i = 2; i < 128; i++) {
+      struct fdelem* fde = &thread_current()->fds[i];
+      if (fde->fd == i) file_close(fde->f);
+    }
+    file_allow_write(thread_current()->elf);
+    file_close(thread_current()->elf);
+    lock_release(&fslock);
+    free(thread_current()->fds);
+  }
   /* sema_up exit to let parrent get exit code */
   sema_up(&tinfos[thread_current()->tid].sema_exit);
 

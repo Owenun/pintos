@@ -12,6 +12,7 @@
 #include "threads/synch.h"
 #include "threads/vaddr.h"
 #include <devices/timer.h>
+#include "malloc.h"
 
 #ifdef USERPROG
 #include "userprog/process.h"
@@ -113,7 +114,7 @@ int  thread_get_priority(void);
 /** for list_max, compare two thread by priority, unused for mlfqs */
 static bool thread_less(const struct list_elem* a, const struct list_elem* b, void* arg UNUSED);
 
-struct tinfo tinfos[128];
+struct tinfo tinfos[THREADMAX];
 
 /** Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -238,9 +239,11 @@ thread_create (const char *name, int priority,
 
   /* Allocate thread. */
   t = palloc_get_page (PAL_ZERO);
-  if (t == NULL)
+  if (t == NULL) {
+    /** no memory left, then return -1 */
     return TID_ERROR;
-
+  }
+  
   /* Initialize thread. */
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
@@ -249,13 +252,15 @@ thread_create (const char *name, int priority,
   /* set ppid and set sema for sync*/
   #ifdef USERPROG
   enum intr_level old_level = intr_disable();
-  ASSERT(tid < 128 && tid > 0);
+  ASSERT(tid < THREADMAX && tid > 0);
   struct tinfo *ti = &tinfos[tid];
   ti->t  = t;
   ti->tid = tid;
   ti->ppid = t->ppid;
   sema_init(&ti->sema_exec, 0);
   sema_init(&ti->sema_exit, 0);
+  t->fds = calloc(1, sizeof(struct fdelem) * 128);
+  t->fdmax = 1;
   intr_set_level(old_level);
   #endif
 

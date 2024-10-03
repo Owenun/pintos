@@ -123,6 +123,8 @@ pintos_init (void)
 
 #ifdef FILESYS
   /* Initialize file system. */
+  /* Add fslock temp for sync*/
+  fslock_init();
   ide_init ();
   locate_block_devices ();
   filesys_init (format_filesys);

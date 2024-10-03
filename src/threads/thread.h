@@ -103,6 +103,9 @@ struct thread
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /**< Page directory. */
     int ppid;
+    int fdmax;
+    struct fdelem *fds;
+    struct file * elf;
 #endif
    /* tick for timer_sleep*/
    uint64_t tick;
@@ -115,6 +118,7 @@ struct thread
     unsigned magic;                     /**< Detects stack overflow. */
   };
 
+#ifdef USERPROG
 struct tinfo {
   tid_t tid;
   tid_t ppid;
@@ -126,12 +130,20 @@ struct tinfo {
   bool load;
 };
 
+struct fdelem {
+  int fd;
+  struct file * f;
+};
+
+#define THREADMAX 1034
+extern struct tinfo tinfos[THREADMAX];
+#endif
+
 /** If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
 extern bool thread_mlfqs;
 extern bool thread_prior;
-extern struct tinfo tinfos[128];
 void thread_init (void);
 void thread_start (void);
 
